@@ -18,3 +18,10 @@ Record every command, path, or flag that differed from the docs, with the fix.
 - `dl-rust-toolchain` runs the standard rustup installer (`curl ... https://sh.rustup.rs | sh -s -- -y --no-modify-path`) with `RUSTUP_HOME` and `CARGO_HOME` under `/optee/toolchains/rust`. It installs prebuilt binaries.
 - A separate `build_toolchain` macro unpacks a Buildroot-built SDK (this one does compile through Buildroot). It belongs to the alternative variant that uses `.done` markers. It was not used here, inferred from the Arm archives being present.
 - Observation, to confirm before acting on it: `dltc` uses `curl -k`, which disables TLS certificate verification, and the lines read so far show no checksum comparison, only a check that `tar` can unpack the file. Review `sed -n '15,30p' build/toolchain.mk` and current upstream before raising it (possible Day 33 topic).
+
+## Day 5: first boot
+
+- Command (inside tmux, from `/optee/build`): `make run-only`. At the `(qemu)` prompt type `c`. Log in as `root` on the normal-world console.
+- The console helper (`launch-terminal` in `build/common.mk`) uses tmux when the `TMUX` environment variable is set: it creates a window `OPTEE_<random>` with one `soc_term.py` pane per UART port (54320 normal world, 54321 secure world), skipping any port that already accepts connections (`nc -z`). So the build works in a headless container as long as it runs inside tmux.
+- Pitfall: starting your own `nc -l` listeners first fails. The helper probes each port with `nc -z`, which connects and disconnects, and a one-shot OpenBSD `nc -l` exits after that connection. The helper then sees the port as taken and creates no window.
+- Result: `xtest 4002` printed `regression_4002 OK` (3272 subtests, 0 failed). QEMU 10.0.0.
