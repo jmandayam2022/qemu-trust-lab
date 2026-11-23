@@ -92,3 +92,27 @@ Build host: the container. Target board: the QEMU guest.
 | `(qemu)` monitor | QEMU's control prompt. `c` continues execution. | Day 5. |
 | `launch-terminal`, `wait-for-ports` | Helpers in `common.mk` used by `make run-only` to open terminal windows and wait for the ports. | Fail in a headless container. Day 9 replaces them. |
 | `xtest` | OP-TEE's regression test suite, run in the normal world. | `xtest 4002` on Day 5. |
+
+## Day 5-6: boot, consoles, and logs
+
+| Term | Meaning | Where it shows up |
+|---|---|---|
+| tmux | Terminal multiplexer. A session holds windows, and a window holds panes. Keys: `Ctrl-b w` (window list), `Ctrl-b [` (scroll or copy mode), `Ctrl-b z` (zoom a pane), `Ctrl-b :` (tmux command prompt), `Ctrl-b c` (new window). | The lab runs inside a tmux session named `lab`. |
+| `$TMUX` | Environment variable that tmux sets for every shell inside it. The build's `launch-terminal` helper checks it. | `echo $TMUX` must print a path before `make run-only`. |
+| `launch-terminal`, `wait-for-ports` | Makefile macros in `build/common.mk` that open one console per UART port and wait until both accept connections. | In tmux they create a window named `OPTEE_<n>` with two panes. |
+| `soc_term.py` | Console script run in each pane. Listens on a port, accepts QEMU's connection, shows the UART output, and (inferred from its log lines, script not read) sends keystrokes back. | Ports 54320 (normal world) and 54321 (secure world). |
+| Socket and TCP endpoint | A socket is the OS handle for one end of a connection. An endpoint is an IP address plus a port. | QEMU is the client, `soc_term.py` is the server, both on `127.0.0.1`. |
+| `-serial tcp:127.0.0.1:PORT` | QEMU option that attaches an emulated UART to a TCP connection, with QEMU as the client. | First `-serial` is the first UART (normal world), second is the second UART (secure world). |
+| PL011 UART | The serial port model used by QEMU `virt`. The kernel console is the PL011 at `0x9000000` (`ttyAMA0`). The secure-world UART is believed to be a second PL011 at `0x9040000` (not confirmed). | Day 6 annotation, N:220. |
+| `nc -z host port` | Connects to a port and disconnects at once, exiting 0 if something was listening. | The helper's port check. A one-shot `nc -l` listener quits after this probe. |
+| `-S` and `c` | `-S` freezes the CPU at startup. `c` at the `(qemu)` prompt continues, releasing the CPU so BL1 starts. | Like releasing a board's reset line. |
+| `system_reset`, guest `reboot` | `system_reset` at `(qemu)` resets the machine. `reboot` in the guest ended in a full reset from BL1. | Day 5 reboot test. |
+| `tmux capture-pane -p -J -S - -t <pane>` | Dumps a pane's whole scrollback. `-p` prints to stdout, `-J` joins wrapped lines, `-S -` starts at the top. | How the Day 6 boot logs were saved. |
+| OP-TEE log prefix | `<level>/<component>:<cpu> <thread> <function>:<line> message`. Levels: `E` error (1), `I` info (2), `D` debug (3), `F` flow (4), and level 0 `TRACE_MIN` (the letter `M` is an inference). Confirmed in `trace_levels.h`. | `D/TC:`, `I/TC:`, `D/LD:` in the secure log. |
+| Log components | `TC` is TEE Core, `LD` is `ldelf`, `TA` is a trusted application's own output. | Day 19 adds `TA` lines from your own TA. |
+| `CFG_TEE_CORE_LOG_LEVEL`, `CFG_TEE_TA_LOG_LEVEL` | Build options for core and TA log verbosity (0 to 4). The `D` lines in the log show the core level is at least 3. | Day 19. Current value not yet looked up. |
+| `ldelf` | User-mode ELF loader that OP-TEE runs to load a TA. | `D/LD: ldelf:...` lines. |
+| TA store | Where OP-TEE looks for a TA binary. Order seen in the log: early TA (built into the OP-TEE image), Secure Storage TA, REE (the normal-world filesystem, served by `tee-supplicant`). | S:107-110, and the `crypt` TA lookup on Day 5. |
+| PTA (pseudo TA) | A TA that runs inside the OP-TEE core, not as a user-mode TA. `device.pta` and `system.pta` appeared in the log. | S:153-157, S:201-207. |
+| `tee-supplicant` | Normal-world daemon that serves OP-TEE's requests, such as loading TA files from `/lib/optee_armtz`. | Started in userspace, N:371. |
+| REE FS | OP-TEE secure storage backed by the normal-world filesystem. The log warns that no replay-protection counter is available. | S:172-173. Relevant to Days 25 and 26. |
